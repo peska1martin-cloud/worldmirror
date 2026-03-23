@@ -9,7 +9,7 @@ from streamlit_folium import st_folium
 import folium
 
 # --- 1. KONFIGURACE ---
-st.set_page_config(page_title="WorldMirror Matrix ULTIMATE", page_icon="⚖️", layout="wide")
+st.set_page_config(page_title="WorldMirror Matrix Elite+", page_icon="⚖️", layout="wide")
 
 try:
     GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
@@ -23,7 +23,7 @@ except Exception:
 if 'view' not in st.session_state: st.session_state.view = 'map'
 if 'selected_idx' not in st.session_state: st.session_state.selected_idx = None
 
-# --- 2. FUNKCE ---
+# --- 2. POMOCNÉ FUNKCE ---
 def ziskej_funkcni_model():
     try:
         modely = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
@@ -59,7 +59,7 @@ def stahni_zpravy():
         pro_web = []
         for i, c in enumerate(clanky):
             text_pro_ai += f"[{i}] {c['source']['name']}: {c['title']}\n"
-            pro_web.append({"id": i, "zdroj": c['source']['name'], "titulek": c['title'], "link": c['url'], "info": c.get('description', '')})
+            pro_web.append({"id": i, "zdroj": c['source']['name'], "titulek": c['title'], "link": c['url']})
         return pro_web, text_pro_ai
     except: return [], ""
 
@@ -73,32 +73,37 @@ if st.sidebar.button("🗑️ Vymazat historii"):
     st.rerun()
 
 if st.session_state.view == 'map':
-    st.title("⚖️ WorldMirror: Globální Analytik")
+    st.title("⚖️ WorldMirror: Globální Geopolitický Sken")
     
-    if st.button("🚀 Spustit hloubkový sken"):
-        with st.spinner("Skenuji planetu, geopolitiku i ideologie..."):
+    if st.button("🚀 Spustit hloubkovou analýzu světa"):
+        with st.spinner("Skenuji 5 globálních center moci..."):
             model = ziskej_funkcni_model()
             clanky, text_ai = stahni_zpravy()
             if model and clanky:
                 prompt = f"""
-                Jsi expert na mediální analýzu. Z těchto 50 zpráv vyber 10 klíčových.
-                U každého tématu vypracuj rozbor (v češtině, bez hvězdiček u klíčů):
+                Jsi elitní geopolitický analytik. Z těchto 50 zpráv vyber 10 nejdůležitějších.
+                Pro každé téma vytvoř rozbor. Důsledně rozlišuj mezi zájmy USA, EU a Vyspělé Asie.
+                Odpovídej v češtině, bez hvězdiček u klíčů.
 
                 TÉMA: [Název]
                 KATEGORII: [Válka / Ekonomika / Politika / Technologie]
-                LAT: [Zeměpisná šířka - číslo]
-                LON: [Zeměpisná délka - číslo]
+                LAT: [Šířka]
+                LON: [Délka]
                 BLESKOVKA: [Stručná věta]
                 FAKTA: [Popis události]
                 
-                ZAPAD: [Pohled USA/EU]
-                VYCHOD: [Pohled RUS/CHN]
-                JIH: [Pohled Globálního Jihu / Arabský svět / Indie]
+                GEOPOLITIKA:
+                USA: [Postoj a zájmy Washingtonu]
+                EU: [Postoj a zájmy Bruselu/Evropy]
+                ASIE_G7: [Postoj Japonska, Taiwanu a J. Koreje - důraz na technologie a regionální stabilitu]
+                VYCHOD: [Pohled Ruska a Číny]
+                JIH: [Pohled Globálního Jihu a Arabského světa]
                 
-                LEVICE: [Jak o tom píší progresivní/levicová média?]
-                PRAVICE: [Jak o tom píší konzervativní/pravicová média?]
+                IDEOLOGIE:
+                LEVICE: [Levicový/Liberal pohled]
+                PRAVICE: [Pravicový/Conservative pohled]
                 
-                BOD_SVARU: [V čem se tyto světy nejvíce rozcházejí?]
+                BOD_SVARU: [Kde se tyto zájmy nejvíce srážejí?]
                 ---
                 ZDROJE: {text_ai}
                 """
@@ -129,7 +134,7 @@ if st.session_state.view == 'map':
                         with st.container(border=True):
                             st.markdown(f"**{idx + 1}. {vytahni(t_data, 'TÉMA')}**")
                             st.write(vytahni(t_data, "BLESKOVKA"))
-                            if st.button(f"🔎 Otevřít analýzu", key=f"btn_{idx}"):
+                            if st.button(f"🔍 Otevřít analýzu", key=f"btn_{idx}"):
                                 st.session_state.selected_idx, st.session_state.view = idx, 'detail'
                                 st.rerun()
 
@@ -140,31 +145,33 @@ elif st.session_state.view == 'detail':
     
     st.button("⬅️ Zpět na dashboard", on_click=lambda: setattr(st.session_state, 'view', 'map'))
     nazev = vytahni(t_data, 'TÉMA')
-    st.title(f"🔍 Detailní rozbor: {nazev}")
+    st.title(f"🔍 Hloubkový rozbor: {nazev}")
     
-    st.subheader("📌 Shrnutí události")
-    st.write(vytahni(t_data, "FAKTA"))
+    st.subheader("📌 Co se stalo")
+    st.info(vytahni(t_data, "FAKTA"))
     
-    st.markdown("### 🌍 Geopolitické srovnání")
-    c1, c2, c3 = st.columns(3)
-    with c1: st.info(f"🟦 **Západní blok**\n\n{vytahni(t_data, 'ZAPAD')}")
-    with c2: st.warning(f"🟥 **Východní blok**\n\n{vytahni(t_data, 'VYCHOD')}")
-    with c3: st.success(f"🌏 **Globální Jih**\n\n{vytahni(t_data, 'JIH')}")
+    # --- GEOPOLITICKÁ MATICE (5 SLOUPCŮ VE DVOU ŘADÁCH) ---
+    st.markdown("### 🌍 Globální mocenská křižovatka")
+    r1_c1, r1_c2, r1_c3 = st.columns(3)
+    with r1_c1: st.markdown("🟦 **USA**"); st.caption(vytahni(t_data, 'USA'))
+    with r1_c2: st.markdown("🇪🇺 **EU**"); st.caption(vytahni(t_data, 'EU'))
+    with r1_c3: st.markdown("🟣 **Vyspělá Asie (JPN/TWN/KOR)**"); st.caption(vytahni(t_data, 'ASIE_G7'))
+    
+    r2_c1, r2_c2 = st.columns(2)
+    with r2_c1: st.markdown("🟥 **Východ (RUS/CHN)**"); st.caption(vytahni(t_data, 'VYCHOD'))
+    with r2_c2: st.markdown("🌏 **Globální Jih**"); st.caption(vytahni(t_data, 'JIH'))
     
     st.markdown("### 🧠 Ideologické spektrum")
-    c4, c5 = st.columns(2)
-    with c4: st.success(f"🌿 **Levice / Liberal**\n\n{vytahni(t_data, 'LEVICE')}")
-    with c5: st.error(f"🦅 **Pravice / Conservative**\n\n{vytahni(t_data, 'PRAVICE')}")
+    c5, c6 = st.columns(2)
+    with c5: st.success(f"🌿 **Levice / Liberal**\n\n{vytahni(t_data, 'LEVICE')}")
+    with c6: st.error(f"🦅 **Pravice / Conservative**\n\n{vytahni(t_data, 'PRAVICE')}")
     
     st.divider()
     st.error(f"⚠️ **Bod sváru:** {vytahni(t_data, 'BOD_SVARU')}")
     
     st.divider()
-    st.subheader("🔗 Zdrojové články z médií")
+    st.subheader("🔗 Zdrojové články")
     klice = nazev.lower().split()[:2]
-    najite = 0
     for c in report['zdroje']:
-        if any(k in c['titulek'].lower() for k in klice) or najite < 3:
+        if any(k in c['titulek'].lower() for k in klice):
             st.markdown(f"**{c['zdroj']}**: [{c['titulek']}]({c['link']})")
-            najite += 1
-            if najite > 5: break

@@ -9,7 +9,7 @@ from streamlit_folium import st_folium
 import folium
 
 # --- 1. KONFIGURACE ---
-st.set_page_config(page_title="WorldMirror Matrix PRO", page_icon="⚖️", layout="wide")
+st.set_page_config(page_title="WorldMirror Matrix ULTIMATE", page_icon="⚖️", layout="wide")
 
 try:
     GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
@@ -73,33 +73,32 @@ if st.sidebar.button("🗑️ Vymazat historii"):
     st.rerun()
 
 if st.session_state.view == 'map':
-    st.title("⚖️ WorldMirror: Ideologický & Geopolitický Dashboard")
+    st.title("⚖️ WorldMirror: Globální Analytik")
     
     if st.button("🚀 Spustit hloubkový sken"):
-        with st.spinner("Analyzuji střet ideologií a zájmů..."):
+        with st.spinner("Skenuji planetu, geopolitiku i ideologie..."):
             model = ziskej_funkcni_model()
             clanky, text_ai = stahni_zpravy()
             if model and clanky:
                 prompt = f"""
                 Jsi expert na mediální analýzu. Z těchto 50 zpráv vyber 10 klíčových.
-                U každého tématu vypracuj hloubkový rozbor (v češtině, bez hvězdiček u klíčů):
+                U každého tématu vypracuj rozbor (v češtině, bez hvězdiček u klíčů):
 
                 TÉMA: [Název]
                 KATEGORII: [Válka / Ekonomika / Politika / Technologie]
-                LAT: [Šířka]
-                LON: [Délka]
+                LAT: [Zeměpisná šířka - číslo]
+                LON: [Zeměpisná délka - číslo]
                 BLESKOVKA: [Stručná věta]
-                FAKTA: [Popis]
+                FAKTA: [Popis události]
                 
-                GEOPOLITIKA:
                 ZAPAD: [Pohled USA/EU]
                 VYCHOD: [Pohled RUS/CHN]
+                JIH: [Pohled Globálního Jihu / Arabský svět / Indie]
                 
-                IDEOLOGIE:
                 LEVICE: [Jak o tom píší progresivní/levicová média?]
                 PRAVICE: [Jak o tom píší konzervativní/pravicová média?]
                 
-                BOD_SVARU: [Kde se tyto světy nejvíce rozcházejí?]
+                BOD_SVARU: [V čem se tyto světy nejvíce rozcházejí?]
                 ---
                 ZDROJE: {text_ai}
                 """
@@ -111,7 +110,6 @@ if st.session_state.view == 'map':
         report = historie[0]
         seznam_temat = [t.strip() for t in report['analyza'].split("---") if "TÉMA" in t.upper()]
         
-        # MAPA
         m = folium.Map(location=[20, 10], zoom_start=2, tiles="CartoDB dark_matter")
         barvy = {"Válka": "red", "Ekonomika": "green", "Politika": "blue", "Technologie": "purple"}
         for i, t_data in enumerate(seznam_temat):
@@ -120,7 +118,6 @@ if st.session_state.view == 'map':
             except: continue
         st_folium(m, width="100%", height=400)
 
-        # DLAŽDICE
         st.subheader("📌 Top 10 témat (klikni pro detail)")
         for i in range(0, len(seznam_temat), 2):
             cols = st.columns(2)
@@ -132,7 +129,7 @@ if st.session_state.view == 'map':
                         with st.container(border=True):
                             st.markdown(f"**{idx + 1}. {vytahni(t_data, 'TÉMA')}**")
                             st.write(vytahni(t_data, "BLESKOVKA"))
-                            if st.button(f"🔎 Detailní rozbor", key=f"btn_{idx}"):
+                            if st.button(f"🔎 Otevřít analýzu", key=f"btn_{idx}"):
                                 st.session_state.selected_idx, st.session_state.view = idx, 'detail'
                                 st.rerun()
 
@@ -141,23 +138,33 @@ elif st.session_state.view == 'detail':
     seznam_temat = [t.strip() for t in report['analyza'].split("---") if "TÉMA" in t.upper()]
     t_data = seznam_temat[st.session_state.selected_idx]
     
-    st.button("⬅️ Zpět na mapu", on_click=lambda: setattr(st.session_state, 'view', 'map'))
-    st.title(f"🔍 Rozbor: {vytahni(t_data, 'TÉMA')}")
+    st.button("⬅️ Zpět na dashboard", on_click=lambda: setattr(st.session_state, 'view', 'map'))
+    nazev = vytahni(t_data, 'TÉMA')
+    st.title(f"🔍 Detailní rozbor: {nazev}")
     
-    st.subheader("📌 Fakta")
+    st.subheader("📌 Shrnutí události")
     st.write(vytahni(t_data, "FAKTA"))
     
-    # --- GEOPOLITICKÁ SEKCE ---
-    st.markdown("### 🌍 Geopolitický střet")
-    c1, c2 = st.columns(2)
+    st.markdown("### 🌍 Geopolitické srovnání")
+    c1, c2, c3 = st.columns(3)
     with c1: st.info(f"🟦 **Západní blok**\n\n{vytahni(t_data, 'ZAPAD')}")
     with c2: st.warning(f"🟥 **Východní blok**\n\n{vytahni(t_data, 'VYCHOD')}")
+    with c3: st.success(f"🌏 **Globální Jih**\n\n{vytahni(t_data, 'JIH')}")
     
-    # --- IDEOLOGICKÁ SEKCE (NOVÉ!) ---
     st.markdown("### 🧠 Ideologické spektrum")
-    c3, c4 = st.columns(2)
-    with c3: st.success(f"🌿 **Levicová média / Liberal**\n\n{vytahni(t_data, 'LEVICE')}")
-    with c4: st.error(f"🦅 **Pravicová média / Conservative**\n\n{vytahni(t_data, 'PRAVICE')}")
+    c4, c5 = st.columns(2)
+    with c4: st.success(f"🌿 **Levice / Liberal**\n\n{vytahni(t_data, 'LEVICE')}")
+    with c5: st.error(f"🦅 **Pravice / Conservative**\n\n{vytahni(t_data, 'PRAVICE')}")
     
     st.divider()
     st.error(f"⚠️ **Bod sváru:** {vytahni(t_data, 'BOD_SVARU')}")
+    
+    st.divider()
+    st.subheader("🔗 Zdrojové články z médií")
+    klice = nazev.lower().split()[:2]
+    najite = 0
+    for c in report['zdroje']:
+        if any(k in c['titulek'].lower() for k in klice) or najite < 3:
+            st.markdown(f"**{c['zdroj']}**: [{c['titulek']}]({c['link']})")
+            najite += 1
+            if najite > 5: break

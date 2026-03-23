@@ -11,8 +11,8 @@ import folium
 st.set_page_config(page_title="WorldMirror Matrix Map", page_icon="🌍", layout="wide")
 
 # 🔑 KLÍČE (Tady je budeš muset doplnit)
-GOOGLE_API_KEY = "AIzaSyBrDfmIOtTTfd2efxIGFSBmJRxwsVgbrWM"
-NEWS_API_KEY = "f4725d2720c340939b3ff2b632ef15ce"
+GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+NEWS_API_KEY = st.secrets["NEWS_API_KEY"]
 
 genai.configure(api_key=GOOGLE_API_KEY)
 newsapi = NewsApiClient(api_key=NEWS_API_KEY)

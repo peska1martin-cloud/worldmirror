@@ -1,0 +1,5 @@
+streamlit
+google-generativeai
+newsapi-python
+streamlit-folium
+folium

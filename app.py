@@ -74,7 +74,7 @@ if st.session_state.view == 'map':
     if st.button("🚀 Spustit hloubkovou analýzu světa"):
         with st.spinner("Skenuji planetu, geopolitiku a píši reportáže... (Může to trvat minutu)"):
             model = ziskej_funkcni_model()
-            clanky, text_ai = ststahni_zpravy()
+            clanky, text_ai = stahni_zpravy()
             if model and clanky:
                 # --- NOVÝ PROMPT PRO JSON ODPOVĚĎ ---
                 prompt = f"""

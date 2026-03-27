@@ -4,3 +4,4 @@ newsapi-python
 streamlit-folium
 folium
 gTTS
+feedparser

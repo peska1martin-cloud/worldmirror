@@ -7,9 +7,12 @@ import re
 from datetime import datetime
 from streamlit_folium import st_folium
 import folium
+from gtts import gTTS
+import base64
+from io import BytesIO
 
 # --- 1. KONFIGURACE ---
-st.set_page_config(page_title="WorldMirror: Global Triangulation", page_icon="⚖️", layout="wide")
+st.set_page_config(page_title="WorldMirror Matrix Elite+ PRO", page_icon="⚖️", layout="wide")
 
 try:
     GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
@@ -23,7 +26,7 @@ except Exception:
 if 'view' not in st.session_state: st.session_state.view = 'map'
 if 'selected_idx' not in st.session_state: st.session_state.selected_idx = None
 
-# --- 2. FUNKCE ---
+# --- 2. POMOCNÉ FUNKCE ---
 def nacti_historii():
     if os.path.exists("historie.json"):
         with open("historie.json", "r", encoding="utf-8") as f: return json.load(f)
@@ -36,15 +39,11 @@ def uloz_do_historie(novy_zaznam):
         json.dump(historie, f, ensure_ascii=False, indent=4)
 
 def stahni_multipolar_zpravy():
-    """Stahuje zprávy z různorodých geopolitických zdrojů."""
     try:
-        # Cíleně hledáme v doménách z různých bloků
         data = newsapi.get_everything(
             q='geopolitics OR war OR economy OR conflict',
-            domains='tass.com,rt.com,aljazeera.com,scmp.com,reuters.com,apnews.com,dw.com',
-            language='en',
-            sort_by='publishedAt',
-            page_size=80
+            domains='tass.com,rt.com,aljazeera.com,scmp.com,reuters.com,apnews.com,dw.com,japantimes.co.jp,koreaherald.com',
+            language='en', sort_by='publishedAt', page_size=80
         )
         clanky = data.get('articles', [])
         text_pro_ai = ""
@@ -53,18 +52,23 @@ def stahni_multipolar_zpravy():
             text_pro_ai += f"ID:{i} [{c['source']['name']}]: {c['title']}\n"
             pro_web.append({"id": i, "zdroj": c['source']['name'], "titulek": c['title'], "link": c['url']})
         return pro_web, text_pro_ai
-    except Exception as e:
-        st.error(f"Chyba NewsAPI: {e}")
-        return [], ""
+    except: return [], ""
 
 def ziskej_nejlepsi_model():
-    """Pokusí se získat 1.5 Pro, jinak Flash."""
     try:
         modely = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        vybrany = next((m for m in modely if "1.5-pro" in m), 
-                  next((m for m in modely if "flash" in m), modely[0]))
+        vybrany = next((m for m in modely if "1.5-pro" in m), next((m for m in modely if "flash" in m), modely[0]))
         return genai.GenerativeModel(vybrany)
     except: return None
+
+def text_na_audio(text):
+    """Převede text na audio a vrátí HTML přehrávač."""
+    tts = gTTS(text=text, lang='cs')
+    fp = BytesIO()
+    tts.write_to_fp(fp)
+    fp.seek(0)
+    audio_base64 = base64.b64encode(fp.read()).decode()
+    return f'<audio controls src="data:audio/mp3;base64,{audio_base64}"></audio>'
 
 # --- 3. HLAVNÍ LOGIKA ---
 st.sidebar.title("📚 WorldMirror Archiv")
@@ -80,48 +84,44 @@ BARVY_BG = {"Válka": "#FFECEC", "Ekonomika": "#E6F4F1", "Politika": "#E6F0FF", 
 
 if st.session_state.view == 'map':
     st.title("⚖️ WorldMirror: Globální Triangulace")
-    st.caption("Analýza světa skrze optiku Západu, Východu a Globálního Jihu.")
     
-    if st.button("🚀 Spustit hloubkovou analýzu (Gemini 1.5 Pro)"):
-        with st.spinner("Sbírám data z TASS, Al-Jazeera, Reuters a SCMP..."):
+    if st.button("🚀 Spustit hloubkovou analýzu (USA, EU, Asie, Východ, Jih)"):
+        with st.spinner("Analyzuji multipolární svět skrze 80 zdrojů..."):
             model = ziskej_nejlepsi_model()
             clanky, text_ai = stahni_multipolar_zpravy()
             if model and clanky:
                 prompt = f"""
-                Jsi elitní analytik mezinárodních vztahů. Tvým úkolem je vytvořit naprosto objektivní rozbor.
-                Z těchto zpráv vyber 10 klíčových témat. U každého zmapuj střet narativů.
+                Jsi špičkový analytik. Vyber 10 nejdůležitějších témat. 
+                Rozlišuj pohledy USA, EU a Vyspělé Asie (JPN/KOR/TWN).
                 
                 Vrať POUZE JSON (seznam 10 objektů):
                 [
                   {{
-                    "tema": "Název tématu",
+                    "tema": "Název",
                     "kategorie": "Válka/Ekonomika/Politika/Technologie",
                     "lat": 0.0, "lon": 0.0,
                     "bleskovka": "Stručná věta",
-                    "fakta": "Co se objektivně stalo (společný základ)",
-                    "usa": "ZÁPADNÍ POHLED: Jak to interpretuje Washington/Brusel",
-                    "eu": "EVROPSKÁ SPECIFIKA: Kde se EU liší od USA (např. humanitární právo, Green Deal)",
-                    "asie": "ASIE (JPN/KOR/TWN): Technologické a regionální zájmy",
-                    "vychod": "VÝCHODNÍ POHLED: Jak to interpretuje Moskva a Peking",
-                    "jih": "GLOBÁLNÍ JIH / ARABSKÝ SVĚT: Jak to vidí Al-Jazeera a rozvojový svět",
-                    "levice": "Liberal/Progresivní narativ",
-                    "pravice": "Conservative/Suverénní narativ",
-                    "bod_svaru": "Klíčový bod, kde se tyto strany nejvíce rozcházejí",
-                    "clanek": "Hloubková reportáž (300 slov) srovnávající tyto propagandy.",
+                    "fakta": "Objektivní popis události v 3 větách",
+                    "usa": "Postoj USA",
+                    "eu": "Postoj Evropské unie (hledej rozdíly oproti USA)",
+                    "asie": "Vyspělá Asie (Japonsko, Korea, Taiwan)",
+                    "vychod": "Východní blok (Rusko, Čína)",
+                    "jih": "Globální Jih a Arabský svět",
+                    "levice": "Levicový/Liberální pohled",
+                    "pravice": "Pravicový/Konzervativní pohled",
+                    "bod_svaru": "Zásadní rozpor mezi těmito stranami",
+                    "clanek": "Hloubková reportáž (300 slov) v češtině.",
                     "zdroje_id": [indexy]
                   }}
                 ]
-                ZDROJE (včetně ruských a arabských):
-                {text_ai}
+                ZDROJE: {text_ai}
                 """
                 try:
                     result = model.generate_content(prompt)
-                    cleaned_response = re.search(r"```json(.*)```", result.text, re.DOTALL)
-                    json_str = cleaned_response.group(1).strip() if cleaned_response else result.text.strip()
+                    json_str = re.search(r"```json(.*)```", result.text, re.DOTALL).group(1).strip()
                     uloz_do_historie({"cas": datetime.now().strftime("%d.%m.%Y %H:%M"), "analyza_json": json.loads(json_str), "zdroje": clanky})
                     st.rerun()
-                except Exception as e:
-                    st.error(f"Chyba AI: {e}")
+                except: st.error("Chyba při zpracování AI. Zkuste to znovu.")
 
     if historie:
         report = historie[0]
@@ -130,13 +130,8 @@ if st.session_state.view == 'map':
         m = folium.Map(location=[20, 10], zoom_start=2, tiles="CartoDB dark_matter")
         for t in seznam_temat:
             kat = t.get('kategorie', 'Politika').strip().capitalize()
-            try:
-                folium.CircleMarker(
-                    location=[float(t['lat']), float(t['lon'])], radius=12,
-                    popup=t['tema'], color=BARVY.get(kat, "gray"), fill=True
-                ).add_to(m)
+            try: folium.CircleMarker(location=[float(t['lat']), float(t['lon'])], radius=12, popup=t['tema'], color=BARVY.get(kat, "gray"), fill=True).add_to(m)
             except: continue
-        
         st_folium(m, width="100%", height=400)
         
         st.divider()
@@ -148,30 +143,41 @@ if st.session_state.view == 'map':
                     t = seznam_temat[idx]
                     kat = t.get('kategorie', 'Politika').strip().capitalize()
                     with cols[j]:
-                        st.markdown(f"""<div style="border-left: 10px solid {BARVY.get(kat, '#333')}; background-color: {BARVY_BG.get(kat, '#f0f0f0')}; padding: 15px; border-radius: 5px; margin-bottom: 10px;">
-                                    <h4 style="margin: 0; color: #111;">{idx + 1}. {t.get('tema')}</h4>
-                                    <p style="margin: 5px 0; color: #444; font-size: 0.9em;">{t.get('bleskovka')}</p></div>""", unsafe_allow_html=True)
-                        if st.button(f"🔍 Otevřít analýzu narativů {idx+1}", key=f"btn_{idx}"):
+                        st.markdown(f'<div style="border-left: 10px solid {BARVY.get(kat, "#333")}; background-color: {BARVY_BG.get(kat, "#f0f0f0")}; padding: 15px; border-radius: 5px; margin-bottom: 10px;"><h4>{idx+1}. {t.get("tema")}</h4><p>{t.get("bleskovka")}</p></div>', unsafe_allow_html=True)
+                        if st.button(f"🔍 Detail tématu {idx+1}", key=f"btn_{idx}"):
                             st.session_state.selected_idx, st.session_state.view = idx, 'detail'
                             st.rerun()
 
 elif st.session_state.view == 'detail':
     t = historie[0]['analyza_json'][st.session_state.selected_idx]
-    st.button("⬅️ Zpět na dashboard", on_click=lambda: setattr(st.session_state, 'view', 'map'))
-    st.title(f"🔍 Rozbor: {t.get('tema')}")
-    st.info(f"**Objektivní fakta:** {t.get('fakta')}")
+    st.button("⬅️ Zpět na mapu", on_click=lambda: setattr(st.session_state, 'view', 'map'))
     
-    st.markdown("### 🌍 Střet geopolitických narativů")
+    st.title(f"🔍 {t.get('tema')}")
+    
+    # --- AUDIO: PŘEČÍST FAKTA ---
+    st.subheader("📌 Objektivní fakta")
+    st.markdown(text_na_audio(t.get('fakta')), unsafe_allow_html=True)
+    st.info(t.get('fakta'))
+    
+    st.markdown("### 🌍 Geopolitická matice")
     c1, c2, c3 = st.columns(3)
-    with c1: st.markdown("🟦 **Západ (USA/EU)**"); st.caption(f"**USA:** {t.get('usa')}\n\n**EU 🇪🇺:** {t.get('eu')}")
-    with c2: st.markdown("🟥 **Východ (RUS/CHN)**"); st.caption(t.get('vychod'))
-    with c3: st.markdown("🌏 **Arabský svět / Jih**"); st.caption(t.get('jih'))
+    with c1: st.markdown("🟦 **USA**"); st.caption(t.get('usa'))
+    with c2: st.markdown("🇪🇺 **Evropská unie**"); st.caption(t.get('eu'))
+    with c3: st.markdown("🟣 **Asie (JPN/KOR/TWN)**"); st.caption(t.get('asie'))
+    
+    c4, c5 = st.columns(2)
+    with c4: st.markdown("🟥 **Východ (RUS/CHN)**"); st.caption(t.get('vychod'))
+    with c5: st.markdown("🌏 **Globální Jih / Arab**"); st.caption(t.get('jih'))
     
     st.divider()
-    st.subheader("📝 Hloubková reportáž (Srovnání propagandy)")
-    st.markdown(f"""<div style="background-color: #f9f9f9; padding: 25px; border-radius: 10px; border: 1px solid #ddd; font-family: 'Georgia', serif; line-height: 1.6; font-size: 1.1em;">{t.get('clanek')}</div>""", unsafe_allow_html=True)
     
-    st.error(f"⚠️ **Kritický bod sváru:** {t.get('bod_svaru')}")
+    # --- AUDIO: PŘEČÍST CELOU STRÁNKU (REPORTÁŽ) ---
+    st.subheader("📝 Hloubková reportáž")
+    st.markdown("💡 *Poslechněte si celou analýzu:*")
+    st.markdown(text_na_audio(t.get('clanek')), unsafe_allow_html=True)
+    st.markdown(f'<div style="background-color: #f9f9f9; padding: 25px; border-radius: 10px; border: 1px solid #ddd; font-family: Georgia, serif; line-height: 1.6; font-size: 1.1em;">{t.get("clanek")}</div>', unsafe_allow_html=True)
+    
+    st.error(f"⚠️ **Bod sváru:** {t.get('bod_svaru')}")
     
     st.divider()
     st.subheader("🔗 Zdrojové články")

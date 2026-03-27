@@ -150,8 +150,7 @@ if st.session_state.view == 'map':
                     st.session_state.selected_idx, st.session_state.view = i, 'detail'
                     st.rerun()
 
-        st.divider()
-        for i in range(0, len(seznam), 2):
+    for i in range(0, len(seznam), 2):
             cols = st.columns(2)
             for j in range(2):
                 idx = i + j
@@ -159,5 +158,8 @@ if st.session_state.view == 'map':
                     t = seznam[idx]
                     c = get_clean_color(t.get('kategorie'))
                     with cols[j]:
+                        # Opravený blok s tlačítkem
                         st.markdown(f'<div style="border-left: 10px solid {c}; background-color: #f0f2f6; padding: 15px; border-radius: 5px; margin-bottom: 10px;"><h4>{idx+1}. {t["tema"]}</h4><p>{t["bleskovka"]}</p></div>', unsafe_allow_html=True)
-                        if st.button(f"🔍 Detail {idx+
+                        if st.button(f"🔍 Detail {idx+1}", key=f"btn_{idx}"):
+                            st.session_state.selected_idx, st.session_state.view = idx, 'detail'
+                            st.rerun()

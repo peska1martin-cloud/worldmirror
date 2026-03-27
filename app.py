@@ -129,30 +129,31 @@ if st.session_state.view == 'map':
         report = historie[0]
         seznam = report.get('analyza_json', [])[:10]
         
-        # --- MAPA S PROKLIKEM ---
+   # --- MAPA S PROKLIKEM ---
         m = folium.Map(location=[20, 10], zoom_start=2, tiles="CartoDB dark_matter")
         for i, t in enumerate(seznam):
             c = get_color(t.get('kategorie'))
             try:
                 folium.CircleMarker(
                     location=[float(t['lat']), float(t['lon'])], radius=12,
-                    popup=f"CLICK_IDX:{i}", # Speciální popup pro detekci kliku
-                    tooltip=f"{t['tema']} ({t.get('kategorie')})",
+                    # ZDE JE ZMĚNA: Místo CLICK_IDX:i tam dáme název tématu
+                    popup=t['tema'], 
+                    tooltip=f"Klikni pro detail: {t['tema']}",
                     color=c, fill=True, fill_opacity=0.8
                 ).add_to(m)
             except: continue
         
         st.subheader("🌍 Klikněte na tečku pro detail analýzy")
         map_res = st_folium(m, width="100%", height=450)
-        
         # Detekce prokliku
         if map_res.get('last_object_clicked_popup'):
             popup_val = map_res['last_object_clicked_popup']
-            if "CLICK_IDX:" in popup_val:
-                idx = int(popup_val.split(":")[1])
-                st.session_state.selected_idx = idx
-                st.session_state.view = 'detail'
-                st.rerun()
+            # ZDE JE ZMĚNA: Hledáme v seznamu téma, které se jmenuje stejně jako text v bublině
+            for i, t_obj in enumerate(seznam):
+                if t_obj['tema'] == popup_val:
+                    st.session_state.selected_idx = i
+                    st.session_state.view = 'detail'
+                    st.rerun()
 
         st.markdown('<div style="text-align: center; font-weight: bold;">🔴 Válka | 🟢 Ekonomika | 🔵 Politika | 🟣 Technologie</div>', unsafe_allow_html=True)
         st.divider()

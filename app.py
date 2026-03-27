@@ -13,215 +13,177 @@ from io import BytesIO
 import feedparser
 
 # --- 1. KONFIGURACE ---
-st.set_page_config(page_title="WorldMirror Matrix V6", page_icon="⚖️", layout="wide")
+st.set_page_config(page_title="WorldMirror Matrix V7", page_icon="⚖️", layout="wide")
 
 try:
     GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
     NEWS_API_KEY = st.secrets["NEWS_API_KEY"]
     genai.configure(api_key=GOOGLE_API_KEY)
     newsapi = NewsApiClient(api_key=NEWS_API_KEY)
-except Exception:
-    st.error("❌ CHYBA: Nastavte API klíče v Secrets!")
+except:
+    st.error("Chybí API klíče v Secrets!")
     st.stop()
 
+# Inicializace stavu (aby se nic nemazalo při překliku)
+if 'global_data' not in st.session_state: st.session_state.global_data = None
+if 'personal_data' not in st.session_state: st.session_state.personal_data = None
 if 'view' not in st.session_state: st.session_state.view = 'map'
-if 'selected_data' not in st.session_state: st.session_state.selected_data = None
 
-# --- 2. MAPOVÁNÍ REGIONŮ A BAREV ---
-REGION_MAP = {
-    "ČR": "Czech Republic", "Slovensko": "Slovakia", "EU": "Europe", 
-    "Severní Amerika": "USA Canada", "Rusko": "Russia", "Asie": "Asia", 
-    "Blízký východ": "Middle East", "Afrika": "Africa", "Oceánie": "Australia Oceania"
-}
+# --- 2. BARVY A DEFINICE ---
+BARVY = {"Válka": "#FF4B4B", "Ekonomika": "#29B09D", "Politika": "#007BFF", "Technologie": "#7D44CF",
+         "AI": "#00FFFF", "Ekologie": "#32CD32", "Akciové trhy": "#FFD700", "Průmysl": "#808080",
+         "Showbyznys": "#FF69B4", "Cestování": "#FFA500", "Krimi": "#000000"}
 
-BARVY = {
-    "Válka": "#FF4B4B", "Ekonomika": "#29B09D", "Politika": "#007BFF", 
-    "Technologie": "#7D44CF", "AI": "#00FFFF", "Ekologie": "#32CD32", 
-    "Akciové trhy": "#FFD700", "Průmysl": "#808080", "Showbyznys": "#FF69B4", 
-    "Cestování": "#FFA500", "Krimi": "#000000"
-}
-
-def get_clean_color(kat):
+def get_color(kat):
     k = str(kat).strip().lower()
-    mapping = {"vál": "#FF4B4B", "eko": "#29B09D", "pol": "#007BFF", "tech": "#7D44CF", "ai": "#00FFFF", "přír": "#32CD32", "akci": "#FFD700"}
+    mapping = {"vál": "#FF4B4B", "eko": "#29B09D", "pol": "#007BFF", "tech": "#7D44CF", "ai": "#00FFFF", "akci": "#FFD700"}
     for klicek, barva in mapping.items():
         if klicek in k: return barva
-    return "#AAAAAA"
+    return "gray"
 
-# --- 3. FUNKCE ---
-def nacti_historii():
-    if os.path.exists("historie_v6.json"):
-        with open("historie_v6.json", "r", encoding="utf-8") as f: return json.load(f)
-    return {"global": [], "personal": []}
-
-def uloz_do_historie(klic, zaznam):
-    h = nacti_historii()
-    h[klic] = [zaznam]
-    with open("historie_v6.json", "w", encoding="utf-8") as f:
-        json.dump(h, f, ensure_ascii=False, indent=4)
-
-def ziskej_aktivni_model():
-    models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    preferovany = next((m for m in models if "1.5-pro" in m), models[0])
-    return genai.GenerativeModel(preferovany)
-
-def stahni_data_v6(query_str, include_rss=True):
-    # NEWS API
+# --- 3. SBĚR DAT (S ČESKOU INJEKCÍ) ---
+def stahni_vse(query_str, je_osobni=False):
+    vysledky = []
+    # 1. News API (Globální zdroje)
     try:
-        res = newsapi.get_everything(q=query_str, language='en', sort_by='relevancy', page_size=50)
-        clanky = [{"zdroj": c['source']['name'], "titulek": c['title'], "link": c['url']} for c in res.get('articles', [])]
-    except: clanky = []
+        res = newsapi.get_everything(q=query_str, language='en', sort_by='relevancy', page_size=40)
+        vysledky += [{"zdroj": c['source']['name'], "titulek": c['title'], "link": c['url']} for c in res.get('articles', [])]
+    except: pass
+
+    # 2. RSS Kanály (Východ + ARAB + ČESKÝ BYZNYS)
+    rss_urls = [
+        "https://www.seznamzpravy.cz/rss", # Seznam pro české info (CSG, atd.)
+        "https://archiv.hn.cz/rss/",       # Hospodářky
+        "https://tass.com/rss/v2.xml", 
+        "https://www.aljazeera.com/xml/rss/all.xml"
+    ]
+    for url in rss_urls:
+        try:
+            f = feedparser.parse(url)
+            for e in f.entries[:10]:
+                vysledky.append({"zdroj": "RSS/Direct", "titulek": e.title, "link": e.link})
+        except: continue
     
-    # RSS (jen pro globální nebo pokud si to uživatel přeje)
-    rss_vysledky = []
-    if include_rss:
-        urls = ["https://tass.com/rss/v2.xml", "https://www.aljazeera.com/xml/rss/all.xml"]
-        for u in urls:
-            try:
-                f = feedparser.parse(u)
-                for e in f.entries[:5]: rss_vysledky.append({"zdroj": "RSS/Direct", "titulek": e.title, "link": e.link})
-            except: continue
-    
-    vse = clanky + rss_vysledky
-    text_ai = "".join([f"ID:{i} [{c['zdroj']}]: {c['titulek']}\n" for i, c in enumerate(vse)])
-    return vse, text_ai
+    text_ai = "".join([f"ID:{i} [{c['zdroj']}]: {c['titulek']}\n" for i, c in enumerate(vysledky)])
+    return vysledky, text_ai
 
 def text_na_audio(text):
-    if not text or len(text) < 5: return ""
+    if not text or len(text) < 10: return ""
     try:
-        tts = gTTS(text=text[:1000], lang='cs') # Limit pro gTTS
+        tts = gTTS(text=text[:1500], lang='cs')
         fp = BytesIO()
         tts.write_to_fp(fp)
         fp.seek(0)
-        audio_base64 = base64.b64encode(fp.read()).decode()
-        return f'<audio controls style="width: 100%; height: 35px;"><source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3"></audio>'
+        return f'<audio controls style="width: 100%; height: 35px;"><source src="data:audio/mp3;base64,{base64.b64encode(fp.read()).decode()}" type="audio/mp3"></audio>'
     except: return ""
 
 # --- 4. RENDERER ---
-def render_v6_view(data_list, zdroje_list, key_prefix):
+def render_matrix(data_list, zdroje_list, key_type):
     if not data_list:
-        st.info("Zatím zde nejsou žádná data. Klikněte na tlačítko pro skenování.")
+        st.warning("Žádná data k zobrazení. Spusťte analýzu.")
         return
 
-    m = folium.Map(location=[20, 10], zoom_start=2, tiles="CartoDB dark_matter")
+    m = folium.Map(location=[25, 15], zoom_start=2, tiles="CartoDB dark_matter")
     for i, t in enumerate(data_list):
-        barva = get_clean_color(t.get('kategorie', 'Politika'))
+        c = get_color(t.get('kategorie'))
         try:
             folium.CircleMarker(
                 location=[float(t.get('lat', 0)), float(t.get('lon', 0))], radius=12,
-                popup=t.get('tema', 'Info'), tooltip=t.get('tema'), 
-                color=barva, fill=True, fill_opacity=0.8
+                popup=t.get('tema'), tooltip=t.get('tema'), color=c, fill=True, fill_opacity=0.8
             ).add_to(m)
         except: continue
     
-    map_res = st_folium(m, width="100%", height=450, key=f"map_{key_prefix}")
+    map_res = st_folium(m, width="100%", height=450, key=f"map_{key_type}")
     
     if map_res.get('last_object_clicked_popup'):
-        pop_val = map_res['last_object_clicked_popup']
+        pop = map_res['last_object_clicked_popup']
         for t_obj in data_list:
-            if t_obj.get('tema') == pop_val:
+            if t_obj.get('tema') == pop:
                 st.session_state.selected_data = {"item": t_obj, "zdroje": zdroje_list}
                 st.session_state.view = 'detail'
                 st.rerun()
 
-    st.divider()
-    # DLAŽDICE
+    st.markdown("---")
     for i in range(0, len(data_list), 2):
         cols = st.columns(2)
         for j in range(2):
             idx = i + j
             if idx < len(data_list):
-                t_item = data_list[idx]
-                c_code = get_clean_color(t_item.get('kategorie', 'Politika'))
+                t = data_list[idx]
+                c = get_color(t.get('kategorie'))
                 with cols[j]:
-                    st.markdown(f'<div style="border-left: 10px solid {c_code}; background-color: #f0f2f6; padding: 15px; border-radius: 5px; margin-bottom: 10px; color: #111;"><h4>{idx+1}. {t_item.get("tema", "Neznámé")}</h4><p>{t_item.get("bleskovka", "")}</p></div>', unsafe_allow_html=True)
-                    if st.button(f"🔍 Detail {idx+1}", key=f"btn_{key_prefix}_{idx}"):
-                        st.session_state.selected_data = {"item": t_item, "zdroje": zdroje_list}
+                    st.markdown(f'<div style="border-left: 10px solid {c}; background-color: #f0f2f6; padding: 15px; border-radius: 5px; margin-bottom: 10px; color: #111;"><h4>{idx+1}. {t.get("tema")}</h4><p>{t.get("bleskovka")}</p></div>', unsafe_allow_html=True)
+                    if st.button(f"🔍 Otevřít {idx+1}", key=f"btn_{key_type}_{idx}"):
+                        st.session_state.selected_data = {"item": t, "zdroje": zdroje_list}
                         st.session_state.view = 'detail'
                         st.rerun()
 
-# --- 5. LOGIKA ---
-historie = nacti_historii()
-
+# --- 5. LOGIKA STRÁNEK ---
 if st.session_state.view == 'map':
     st.sidebar.title("💎 WorldMirror Matrix")
-    reg_sel = st.sidebar.multiselect("Regiony (Můj Svět):", list(REGION_MAP.keys()), default=["ČR", "Slovensko"])
-    tem_sel = st.sidebar.multiselect("Kategorie (Můj Svět):", list(BARVY.keys()), default=["AI", "Akciové trhy"])
+    reg = st.sidebar.multiselect("Regiony:", ["ČR", "Slovensko", "EU", "USA", "Rusko", "Asie"], default=["ČR", "Slovensko"])
+    tem = st.sidebar.multiselect("Kategorie:", list(BARVY.keys()), default=["Akciové trhy", "AI"])
     
-    if st.sidebar.button("🗑️ Vymazat historii"):
-        if os.path.exists("historie_v6.json"): os.remove("historie_v6.json")
+    if st.sidebar.button("🗑️ Reset"):
         st.session_state.clear()
         st.rerun()
 
-    t_hot, t_pers = st.tabs(["🔥 Hot News ze světa", "✨ Tvůj vlastní svět"])
+    st.title("⚖️ WorldMirror: Dualitní Matrix V7")
+    t1, t2 = st.tabs(["🔥 Hot News ze světa", "✨ Tvůj vlastní svět"])
 
-    with t_hot:
+    with t1:
         if st.button("🚀 Skenovat Globální Radar"):
-            with st.spinner("Analyzuji planetu..."):
-                model = ziskej_aktivni_model()
-                vse, txt = stahni_data_v6("geopolitics OR world economy", include_rss=True)
-                prompt = f"""
-                Jsi elitní geopolitický analytik. Vyber 10 nejdůležitějších globálních témat.
-                Kategorie MUSÍ být jedna z těchto: Válka, Ekonomika, Politika, Technologie.
-                U analytických polí (usa, eu, asie, vychod, jih, levice, pravice) napiš podrobný TEXTOVÝ rozbor, NE True/False.
-                U pole 'clanek' napiš hloubkovou, barvitou reportáž v češtině o délce MINIMÁLNĚ 300 slov. 
-                Vrať čistý JSON.
-                ZDROJE: {txt}
-                """
+            with st.spinner("Trianguluji velmoci..."):
+                model = genai.GenerativeModel('gemini-1.5-pro')
+                clanky, text_ai = stahni_vse("geopolitics OR world economy OR major war")
+                prompt = f"""Analyzuj zprávy a vyber 10 klíčových globálních témat. Kategorie: Válka, Ekonomika, Politika, Technologie. 
+                U VŠECH polí (usa, eu, asie, vychod, jih, levice, pravice) napiš podrobnou analýzu (min 3 věty). NESMÍŠ napsat 'Analýza nedostupná'.
+                Reportáž (clanek) musí mít alespoň 400 slov. JSON formát. ZDROJE: {text_ai}"""
                 res = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
-                uloz_do_historie("global", {"data": json.loads(res.text), "zdroje": vse})
-                st.rerun()
-        if historie["global"]:
-            st.markdown("🔴 Válka | 🟢 Ekonomika | 🔵 Politika | 🟣 Technologie")
-            render_v6_view(historie["global"][0].get("data"), historie["global"][0].get("zdroje"), "glob")
+                st.session_state.global_data = {"data": json.loads(res.text), "zdroje": clanky}
+        
+        if st.session_state.global_data:
+            render_matrix(st.session_state.global_data["data"], st.session_state.global_data["zdroje"], "glob")
 
-    with t_pers:
+    with t2:
         if st.button("⚡ Sestavit Můj Svět"):
-            with st.spinner("Hledám lokální a specifické zprávy..."):
-                model = ziskej_aktivni_model()
-                eng_regions = [REGION_MAP[r] for r in reg_sel]
-                q_p = f"({ ' OR '.join(eng_regions) }) AND ({ ' OR '.join(tem_sel) if tem_sel else 'news' })"
-                vse_p, txt_p = stahni_data_v6(q_p, include_rss=False)
-                prompt_p = f"""
-                Jsi analytik zaměřený na tyto regiony: {reg_sel} a témata: {tem_sel}.
-                Prioritně vyber 10 témat, která se TÝKAJÍ TĚCHTO REGIONŮ.
-                U pole 'clanek' napiš podrobnou reportáž o délce MINIMÁLNĚ 300 slov.
-                U analytických polí piš VŽDY TEXT, nikdy ne True/False.
-                Vrať čistý JSON.
-                ZDROJE: {txt_p}
-                """
-                res_p = model.generate_content(prompt_p, generation_config={"response_mime_type": "application/json"})
-                uloz_do_historie("personal", {"data": json.loads(res_p.text), "zdroje": vse_p})
-                st.rerun()
-        if historie["personal"]:
-            st.markdown("🔴 Válka 🟢 Ekonomika 🔵 Politika 🟣 Tech 🤖 AI 💹 Trhy 🌿 Eko 🏗️ Průmysl 💄 Show 🚔 Krimi")
-            render_v6_view(historie["personal"][0].get("data"), historie["personal"][0].get("zdroje"), "pers")
+            with st.spinner("Hledám české i světové zprávy..."):
+                model = genai.GenerativeModel('gemini-1.5-pro')
+                q = f"({ ' OR '.join(reg) }) AND ({ ' OR '.join(tem) })"
+                clanky, text_ai = stahni_vse(q, je_osobni=True)
+                prompt = f"""Jsi osobní analytik. Zaměř se na {reg} a {tem}. Vyber 10 témat. Pokud jsou v datech zprávy o českých firmách (např. CSG, ČEZ, PPF), dej jim absolutní prioritu. 
+                U každého pole napiš podrobný rozbor. Reportáž (clanek) musí být Dlouhá a analytická (min 400 slov). JSON formát. ZDROJE: {text_ai}"""
+                res = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
+                st.session_state.personal_data = {"data": json.loads(res.text), "zdroje": clanky}
+        
+        if st.session_state.personal_data:
+            render_matrix(st.session_state.personal_data["data"], st.session_state.personal_data["zdroje"], "pers")
 
 elif st.session_state.view == 'detail':
     sel = st.session_state.selected_data
     t, zdroje = sel["item"], sel["zdroje"]
     st.button("⬅️ Zpět na mapu", on_click=lambda: setattr(st.session_state, 'view', 'map'))
-    st.title(f"🔍 {t.get('tema', 'Detail')}")
+    
+    st.title(f"🔍 {t.get('tema')}")
+    st.markdown(text_na_audio(t.get('fakta')), unsafe_allow_html=True)
     st.info(t.get('fakta', 'Bez popisu'))
     
     st.markdown("### 🌍 Geopolitická matice")
     c1, c2, c3 = st.columns(3)
-    with c1: st.markdown("🟦 **USA**"); st.caption(t.get('usa', 'Analýza nedostupná'))
-    with c2: st.markdown("🇪🇺 **EU**"); st.caption(t.get('eu', 'Analýza nedostupná'))
-    with c3: st.markdown("🟣 **Asie**"); st.caption(t.get('asie', 'Analýza nedostupná'))
+    with c1: st.markdown("🟦 **USA**"); st.caption(t.get('usa'))
+    with c2: st.markdown("🇪🇺 **EU**"); st.caption(t.get('eu'))
+    with c3: st.markdown("🟣 **Asie**"); st.caption(t.get('asie'))
     
     c4, c5 = st.columns(2)
-    with c4: st.markdown("🟥 **Východ**"); st.caption(t.get('vychod', 'Analýza nedostupná'))
-    with c5: st.markdown("🌏 **Jih / Arab**"); st.caption(t.get('jih', 'Analýza nedostupná'))
+    with c4: st.markdown("🟥 **Východ**"); st.caption(t.get('vychod'))
+    with c5: st.markdown("🌏 **Jih / Arab**"); st.caption(t.get('jih'))
     
     st.divider()
-    st.markdown("### 🧠 Ideologické narativy")
     cl, cr = st.columns(2)
-    with cl: st.success(f"🌿 **Liberal / Levice**\n\n{t.get('levice', 'Analýza nedostupná')}")
-    with cr: st.error(f"🦅 **Conservative / Pravice**\n\n{t.get('pravice', 'Analýza nedostupná')}")
+    with cl: st.success(f"🌿 **Liberal / Levice**\n\n{t.get('levice')}")
+    with cr: st.error(f"🦅 **Conservative / Pravice**\n\n{t.get('pravice')}")
     
-    st.subheader("📝 Reportáž")
-    st.write("🔊 *Přečíst reportáž:*")
-    st.markdown(text_na_audio(t.get('clanek', '')), unsafe_allow_html=True)
-    st.markdown(f'<div style="background-color: #f9f9f9; padding: 25px; border-radius: 10px; border: 1px solid #ddd; font-family: Georgia, serif; line-height: 1.6;">{t.get("clanek", "Reportáž nebyla vygenerována.")}</div>', unsafe_allow_html=True)
-    st.error(f"⚠️ **Bod sváru:** {t.get('bod_svaru', 'Nespecifikováno')}")
+    st.subheader("📝 Hloubková reportáž")
+    st.markdown(text_na_audio(t.get('clanek')), unsafe_allow_html=True)
+    st.markdown(f'<div style="background-color: #f9f9f9; padding: 25px; border-radius: 10px; border: 1px solid #ddd; font-family: Georgia, serif; line-height: 1.8; font-size: 1.1em;">{t.get("clanek")}</div>', unsafe_allow_html=True)
+    st.error(f"⚠️ **Bod sváru:** {t.get('bod_svaru')}")

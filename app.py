@@ -72,8 +72,8 @@ def stahni_multipolar_zpravy(regiony_list, temata_list):
         clanky = [{"zdroj": c['source']['name'], "titulek": c['title'], "link": c['url']} for c in data.get('articles', [])]
     except: clanky = []
     
-    rss_vysledky = []
     rss_urls = ["https://tass.com/rss/v2.xml", "https://www.rt.com/rss/news/", "https://www.aljazeera.com/xml/rss/all.xml"]
+    rss_vysledky = []
     for url in rss_urls:
         try:
             f = feedparser.parse(url)
@@ -96,7 +96,7 @@ def text_na_audio(text):
 # --- 4. UI SIDEBAR ---
 st.sidebar.title("💎 WorldMirror Premium")
 regiony_sel = st.sidebar.multiselect("Regiony:", ["ČR", "Slovensko", "EU", "USA", "Rusko", "Asie", "Blízký východ", "Afrika", "Oceánie"], default=["ČR", "EU"])
-temata_sel = st.sidebar.multiselect("Kategorie:", list(BARVY.keys()), default=["Válka", "Ekonomika", "Politika"])
+temata_sel = st.sidebar.multiselect("Kategorie:", list(BARVY.keys()), default=["Válka", "Ekonomika", "Politika", "Akciové trhy"])
 
 if st.sidebar.button("🗑️ Vymazat historii"):
     if os.path.exists("historie.json"): os.remove("historie.json")
@@ -109,23 +109,30 @@ historie = nacti_historii()
 if st.session_state.view == 'map':
     st.title("🌍 WorldMirror: Globální Analytická Matice")
     
-    if st.button("🚀 Spustit personalizovanou analýzu"):
-        with st.spinner("Skenuji vybrané regiony a témata..."):
+    if st.button("🚀 Spustit hloubkovou analýzu"):
+        with st.spinner("Skenuji multipolární zdroje..."):
             model = genai.GenerativeModel('gemini-1.5-pro')
             clanky, text_ai = stahni_multipolar_zpravy(regiony_sel, temata_sel)
-            prompt = f"""
-            Jsi špičkový analytik. Vyber 10 nejdůležitějších témat. Vrať POUZE JSON pole 10 objektů. 
-            Kategorie musí být z tohoto výběru: {', '.join(BARVY.keys())}.
             
-            JSON STRUKTURA: {{ "tema", "kategorie", "lat", "lon", "bleskovka", "fakta", "usa", "eu", "asie", "vychod", "jih", "levice", "pravice", "bod_svaru", "clanek", "zdroje_id" }}
-            ZDROJE: {text_ai}
-            """
-            try:
-                res = model.generate_content(prompt)
-                j_str = re.search(r"```json(.*)```", res.text, re.DOTALL).group(1).strip()
-                uloz_do_historie({"cas": datetime.now().strftime("%d.%m.%Y %H:%M"), "analyza_json": json.loads(j_str), "zdroje": clanky})
-                st.rerun()
-            except: st.error("AI selhala. Zkuste to znovu.")
+            if not clanky:
+                st.warning("Žádné zprávy pro tento výběr nebyly nalezeny.")
+            else:
+                prompt = f"""
+                Jsi elitní analytik. Vyber 10 nejdůležitějších témat. 
+                PRO PREMIUM: U kategorie 'Akciové trhy' povinně uveď konkrétní firmy a symboly (např. $NVDA).
+                
+                ODPOVĚZ POUZE JAKO VALIDNÍ JSON POLE. Nic jiného nepiš.
+                Kategorie musí být z výběru: {', '.join(BARVY.keys())}.
+                
+                Struktura: {{ "tema", "kategorie", "lat", "lon", "bleskovka", "fakta", "usa", "eu", "asie", "vychod", "jih", "levice", "pravice", "bod_svaru", "clanek", "zdroje_id" }}
+                ZDROJE: {text_ai}
+                """
+                try:
+                    res = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
+                    uloz_do_historie({"cas": datetime.now().strftime("%d.%m.%Y %H:%M"), "analyza_json": json.loads(res.text), "zdroje": clanky})
+                    st.rerun()
+                except Exception as e:
+                    st.error("AI selhala při generování JSONu. Zkuste to znovu.")
 
     if historie:
         report = historie[0]
@@ -142,7 +149,6 @@ if st.session_state.view == 'map':
         
         map_res = st_folium(m, width="100%", height=450)
         
-        # PROKLIK Z MAPY
         if map_res.get('last_object_clicked_popup'):
             pop = map_res['last_object_clicked_popup']
             for i, t_obj in enumerate(seznam):
@@ -150,16 +156,54 @@ if st.session_state.view == 'map':
                     st.session_state.selected_idx, st.session_state.view = i, 'detail'
                     st.rerun()
 
-    for i in range(0, len(seznam), 2):
+        st.divider()
+        for i in range(0, len(seznam), 2):
             cols = st.columns(2)
             for j in range(2):
                 idx = i + j
                 if idx < len(seznam):
                     t = seznam[idx]
                     c = get_clean_color(t.get('kategorie'))
+                    bg = BARVY_BG.get(t.get('kategorie', 'Politika'), "#f0f0f0")
                     with cols[j]:
-                        # Opravený blok s tlačítkem
-                        st.markdown(f'<div style="border-left: 10px solid {c}; background-color: #f0f2f6; padding: 15px; border-radius: 5px; margin-bottom: 10px;"><h4>{idx+1}. {t["tema"]}</h4><p>{t["bleskovka"]}</p></div>', unsafe_allow_html=True)
+                        st.markdown(f'<div style="border-left: 10px solid {c}; background-color: {bg}; padding: 15px; border-radius: 5px; margin-bottom: 10px; color: #111;"><h4>{idx+1}. {t["tema"]}</h4><p>{t["bleskovka"]}</p></div>', unsafe_allow_html=True)
                         if st.button(f"🔍 Detail {idx+1}", key=f"btn_{idx}"):
                             st.session_state.selected_idx, st.session_state.view = idx, 'detail'
                             st.rerun()
+
+elif st.session_state.view == 'detail':
+    t = historie[0]['analyza_json'][st.session_state.selected_idx]
+    st.button("⬅️ Zpět na mapu", on_click=lambda: setattr(st.session_state, 'view', 'map'))
+    st.title(f"🔍 {t.get('tema')}")
+    
+    st.subheader("🔊 Audio: Fakta")
+    st.markdown(text_na_audio(t.get('fakta')), unsafe_allow_html=True)
+    st.info(t.get('fakta'))
+    
+    st.markdown("### 🌍 Geopolitická matice")
+    c1, c2, c3 = st.columns(3)
+    with c1: st.markdown("🟦 **USA**"); st.caption(t.get('usa'))
+    with c2: st.markdown("🇪🇺 **EU 🇪🇺**"); st.caption(t.get('eu'))
+    with c3: st.markdown("🟣 **Asie (JPN/KOR/TWN)**"); st.caption(t.get('asie'))
+    
+    c4, c5 = st.columns(2)
+    with c4: st.markdown("🟥 **Východ (RUS/CHN)**"); st.caption(t.get('vychod'))
+    with c5: st.markdown("🌏 **Jih / Arabský svět**"); st.caption(t.get('jih'))
+    
+    st.divider()
+    st.markdown("### 🧠 Ideologie")
+    cl, cr = st.columns(2)
+    with cl: st.success(f"🌿 **Liberal / Levice**\n\n{t.get('levice')}")
+    with cr: st.error(f"🦅 **Conservative / Pravice**\n\n{t.get('pravice')}")
+    
+    st.subheader("📝 Hloubková reportáž")
+    st.markdown(text_na_audio(t.get('clanek')), unsafe_allow_html=True)
+    st.markdown(f'<div style="background-color: #f9f9f9; padding: 25px; border-radius: 10px; border: 1px solid #ddd; font-family: Georgia, serif; line-height: 1.6; font-size: 1.1em;">{t.get("clanek")}</div>', unsafe_allow_html=True)
+    st.error(f"⚠️ **Bod sváru:** {t.get('bod_svaru')}")
+    
+    st.divider()
+    st.subheader("🔗 Zdrojové články")
+    for aid in t.get('zdroje_id', []):
+        if aid < len(historie[0]['zdroje']):
+            art = historie[0]['zdroje'][aid]
+            st.markdown(f"✅ **{art['zdroj']}**: [{art['titulek']}]({art['link']})")
